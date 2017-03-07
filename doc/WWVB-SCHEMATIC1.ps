@@ -1,0 +1,455 @@
+%!PS-Adobe-3.0
+%%Title: WWVB-SCHEMATIC1.ps
+%%Creator: Xcircuit v2.0
+%%CreationDate: Mon Jul 24 18:13:57 2000
+%%Pages: 1
+%%BoundingBox: 109 119 503 673
+%%DocumentNeededResources: font Times-Roman 
+%%EndComments
+%%BeginProlog
+%
+%  PostScript prolog for output from xcircuit
+%  Version: 2.0
+%
+%  Electrical circuit (and otherwise general) drawing program
+%
+%  Written by Tim Edwards 8/5/93--2/25/99  (tim@bach.ece.jhu.edu)
+%  The Johns Hopkins University
+%
+%%BeginResource: procset XCIRCproc 2.0 2
+% supporting definitions --- these are the primary xcircuit types.
+
+/XCIRCsave save def
+/topmat matrix currentmatrix def
+
+/fontslant { /slant exch def [1 0 slant 1 0 0] 
+    exch findfont exch makefont dup length dict /ndict exch def
+    { 1 index /FID ne { ndict 3 1 roll put } { pop pop } ifelse } forall
+    ndict definefont pop} def
+/cf { dup type /realtype eq {40 mul /fscale exch def} if dup /xfont exch def
+   findfont fscale scalefont setfont } def
+/Ss { gsave 0.67 dup scale gsave mty neg rmoveto
+   glevel 1 add /glevel exch def } def
+/ss { gsave 0.67 dup scale gsave mty 0.5 mul rmoveto
+   glevel 1 add /glevel exch def } def
+/ns { currentpoint transform   % preserve x position!
+   glevel {grestore} repeat /glevel 0 def
+   itransform pop currentpoint pop sub 0 rmoveto } def
+/ul { showflag 1 eq { gsave 
+   currentpoint topmat setmatrix 0 0 moveto 2 index stringwidth pop (_)
+   false charpath flattenpath pathbbox grestore exch pop 1 index
+   sub setlinewidth exch pop currentpoint 3 -1 roll add moveto 0
+   rlineto stroke moveto } if } def
+/ol { showflag 1 eq { gsave gsave
+   currentpoint topmat setmatrix 2 index stringwidth pop 3 index
+   true charpath flattenpath pathbbox grestore exch pop
+   exch pop topmat setmatrix (_) true charpath pathbbox grestore
+   exch pop 1 index sub setlinewidth exch pop currentpoint
+   exch 4 1 roll exch sub add moveto pop 0 rlineto stroke
+   moveto } if } def
+/stW { gsave true charpath flattenpath pathbbox pop exch pop sub
+   grestore } def
+/bs { stW 0 rmoveto } def
+/pspc 0 def
+/qS { (aa) stW (a a) stW sub 4 div 0 rmoveto } def
+/hS { qS qS } def
+/textx { dup 2 mul 1 add copy 0 exch
+   { exch exec exch stringwidth pop add } repeat neg ns } def
+/mty { 0 topmat setmatrix (A) true charpath flattenpath pathbbox exch
+   pop exch sub exch pop neg grestore } def
+/texty { gsave 2 copy pop exec mty } def
+/tcenter { textx grestore 0.5 mul 0 rmoveto } def
+/tright  { textx grestore fspc sub 0 rmoveto } def
+/tmiddle { texty 0.5 mul rmoveto } def
+/ttop    { texty fspc sub rmoveto } def
+/tshow { { exec show } repeat ns } def
+
+/label  { gsave translate 0 0 moveto rotate /just exch def just 16 and 0 gt
+	{0 1 dtransform gsave pagemat setmatrix idtransform exch grestore
+	1 0 dtransform gsave pagemat setmatrix idtransform exch grestore
+	dup 0 eq {pop mul 0 gt} {3 1 roll pop pop 0 lt} ifelse
+	{-1 /just just dup 3 and 1 ne {3 xor} if def} {1} ifelse exch 0 lt
+	{-1 /just just dup 12 and 4 ne {12 xor} if def} {1} ifelse scale } if
+	/glevel 0 def /showflag 0 def /fspc pspc def
+	just 1 and 0 gt {gsave just 2 and 0 gt {tright}{tcenter} ifelse}
+	{fspc 0 rmoveto} ifelse
+	just 4 and 0 gt {just 8 and 0 gt {ttop}{tmiddle} ifelse}
+	{0 fspc rmoveto} ifelse
+/showflag 1 def tshow grestore } def
+/pinlabel { /pspc 20 def label /pspc 0 def } def
+/pinglobal { pinlabel } def
+
+/begingate { gsave translate 0 0 moveto dup 0 lt {neg 1 sub -1 1 scale} if
+	rotate dup scale /pinlabel { pop pop pop pop 2 mul {pop} repeat}
+	def } bind def
+/beginparm { -1 1 {1 add -1 roll def} for begingate } bind def
+/endgate { grestore /pinlabel { /pspc 20 def
+	label /pspc 0 def } def } bind def
+
+/tmpa [1 0 0 1 0 0] def
+/gar {8 8 true tmpa {<c0 c0 00 00 0c 0c 00 00>} imagemask} bind
+{8 8 true tmpa {<30 70 60 02 03 07 06 20>} imagemask} bind
+{8 8 true tmpa {<0c 1e 1e 0c c0 e1 e1 c0>} imagemask} bind
+{8 8 true tmpa {<0f 0f 0f 0f f0 f0 f0 f0>} imagemask} bind
+{8 8 true tmpa {<3f f3 e1 e1 f3 3f 1e 1e>} imagemask} bind
+{8 8 true tmpa {<df cf 8f 9f fd fc f8 f9>} imagemask} bind
+{8 8 true tmpa {<ff 3f 3f ff ff f3 f3 ff>} imagemask} bind 7 array astore def
+/ppaint { gsave clip tmpa dup setmatrix pathbbox neg exch neg 4 2 roll
+  neg 4 -1 roll 2 copy gt {exch} if 8 div ceiling 8 mul 4 2 roll neg 2 copy
+  gt {exch} if 8 div ceiling 8 mul 3 -1 roll -8 5 -1 roll
+  { 3 index exch 5 exch put dup -8 3 index { 3 index
+  exch 4 exch put 3 index exec } for } for pop pop pop pop grestore } bind def
+/setstyles {
+  currentlinewidth mul setlinewidth /style exch def
+  style 1 and 0 gt not {closepath} if
+  style 2 and 0 gt {currentlinewidth 4 mul dup 2 array astore 0 setdash} if 
+  style 4 and 0 gt {0.5 currentlinewidth 4 mul 2 array astore 0 setdash} if 
+  style dup 256 ge exch 480 lt and { gsave 1 setgray eofill grestore } if
+  style 16 and 0 gt { gsave style 224 and -5 bitshift dup 7 lt
+	{gar exch get ppaint} { pop eofill } ifelse grestore } if
+  style 8 and 0 gt { newpath } { stroke } ifelse grestore } def
+/scb { gsave setrgbcolor } bind def  /sce { grestore } bind def
+
+/polygon { gsave /num exch def moveto num 1 sub {lineto} repeat setstyles } def
+/xcarc   { gsave newpath arc setstyles } def
+/elb { matrix currentmatrix 7 -1 roll 7 -1 roll translate 5 1 roll 4 -1 roll
+	3 index div 1 scale } def
+/ele { 0 4 1 roll 0 4 1 roll } bind def
+/ellipse { gsave elb newpath ele arc setmatrix setstyles } def
+/pellip  { elb ele arc setmatrix } def
+/nellip  { elb ele arcn setmatrix } def
+/spline  { gsave moveto curveto setstyles } def
+/polyc   { {lineto} repeat } bind def
+/beginpath { gsave moveto } bind def
+/endpath { setstyles } bind def
+/bop	 { 1 setlinecap 0 setlinejoin 6 setmiterlimit 0 setgray } def
+/setpagemat {/pagemat matrix currentmatrix def} def
+/inchscale  {setpagemat 0.375 mul dup scale} def
+/cmscale    {setpagemat 0.35433071 mul dup scale} def
+
+%%EndResource
+%%EndProlog
+
+% XCircuit output starts here.
+
+/5V {
+% -32 -32 64 68 bbox
+begingate
+1  1.00 -32 0 32 0 2 polygon
+1  1.00 0 0 0 -32 2 polygon
+(V) {/Times-Roman 0.900 cf} (+5) {/Symbol 0.900 cf} 2 17 0 0 8 label
+endgate
+} def
+
+/gnd {
+% -32 -60 64 68 bbox
+begingate
+1  1.00 0 0 0 -32 2 polygon
+1  1.00 -32 -32 32 -32 2 polygon
+1  1.00 -18 -46 18 -46 2 polygon
+1  1.00 -4 -60 4 -60 2 polygon
+endgate
+} def
+
+/diode {
+% -8 -48 36 96 bbox
+begingate
+248  1.00 -18 -16 0 16 18 -16 3 polygon
+1  1.00 0 -48 0 -16 2 polygon
+1  1.00 0 48 0 16 2 polygon
+1  1.00 -18 16 18 16 2 polygon
+endgate
+} def
+
+/arrowhead {
+% -12 -32 24 36 bbox
+begingate
+8 -28 beginpath
+3 -18 3 -15 0 0 curveto
+-3 -15 -3 -18 -8 -28 curveto
+-2 -26 2 -26 8 -28 curveto
+249  1.00 endpath
+endgate
+} def
+
+/resistor {
+% -14 -64 28 128 bbox
+begingate
+1  1.00 0 64 0 36 2 polygon
+1  1.00 0 -64 0 -36 2 polygon
+1  1.00 0 -36 14 -30 -14 -18 14 -6 -14 6 14 18 -14 30 0 36 8 polygon
+endgate
+} def
+
+/arrow {
+% -12 -40 24 80 bbox
+begingate
+1  0.80 0 -40 0 20 2 polygon
+1.00 0 0 40 arrowhead
+endgate
+} def
+
+/circle {
+% -6 -12 28 24 bbox
+begingate
+1  1.00 16 0 6 0.00 360.00 xcarc
+1  1.00 0 0 10 0 2 polygon
+endgate
+} def
+
+/switch {
+% -14 -71 51 125 bbox
+begingate
+1  1.30 32 32 2 -43 2 polygon
+1  0.60 0 -48 57 49.00 90.00 xcarc
+1.00 -91 0 -64 circle
+0.60 90 -12 8 arrowhead
+1.00 270 0 48 circle
+endgate
+} def
+
+/capacitor {
+% -32 -64 64 128 bbox
+begingate
+1  1.00 0 -64 0 -6 2 polygon
+1  1.00 0 64 0 6 2 polygon
+1  1.00 -32 6 32 6 2 polygon
+1  1.00 -32 -6 32 -6 2 polygon
+endgate
+} def
+
+%%Page: 1 1
+%%PageOrientation: Landscape
+/pgsave save def bop
+% 1395 1111 offsets
+% 32.00 8.00 gridspace
+90 rotate 10 -621 translate
+0.8000 inchscale
+2.6000 setlinewidth
+
+0  1.00 867 1703 867 1479 1523 1479 1523 1703 4 polygon
+0  1.00 915 1655 915 1527 1475 1527 1475 1655 4 polygon
+(1) {/Times-Roman 0.500 cf} 1 16 0 1075 1095 label
+(2) {/Times-Roman 0.500 cf} 1 16 0 1107 1095 label
+(3) {/Times-Roman 0.500 cf} 1 16 0 1139 1095 label
+(4) {/Times-Roman 0.500 cf} 1 16 0 1171 1095 label
+(5) {/Times-Roman 0.500 cf} 1 16 0 1203 1095 label
+(6) {/Times-Roman 0.500 cf} 1 16 0 1235 1095 label
+(7) {/Times-Roman 0.500 cf} 1 16 0 1267 1095 label
+(8) {/Times-Roman 0.500 cf} 1 16 0 1299 1095 label
+(9) {/Times-Roman 0.500 cf} 1 16 0 1331 1095 label
+(18) {/Times-Roman 0.500 cf} 1 16 0 1075 1175 label
+(17) {/Times-Roman 0.500 cf} 1 16 0 1107 1175 label
+(16) {/Times-Roman 0.500 cf} 1 16 0 1139 1175 label
+(15) {/Times-Roman 0.500 cf} 1 16 0 1171 1175 label
+(14) {/Times-Roman 0.500 cf} 1 16 0 1203 1175 label
+(13) {/Times-Roman 0.500 cf} 1 16 0 1235 1175 label
+(12) {/Times-Roman 0.500 cf} 1 16 0 1267 1175 label
+(11) {/Times-Roman 0.500 cf} 1 16 0 1299 1175 label
+(10) {/Times-Roman 0.500 cf} 1 16 0 1331 1175 label
+(2) {/Times-Roman 0.500 cf} 1 16 0 883 759 label
+(3) {/Times-Roman 0.500 cf} 1 16 0 915 759 label
+(4) {/Times-Roman 0.500 cf} 1 16 0 947 759 label
+(5) {/Times-Roman 0.500 cf} 1 16 0 979 759 label
+(6) {/Times-Roman 0.500 cf} 1 16 0 1011 759 label
+(7) {/Times-Roman 0.500 cf} 1 16 0 1043 759 label
+(8) {/Times-Roman 0.500 cf} 1 16 0 1075 759 label
+(9) {/Times-Roman 0.500 cf} 1 16 0 1075 823 label
+(10) {/Times-Roman 0.500 cf} 1 16 0 1043 823 label
+(11) {/Times-Roman 0.500 cf} 1 16 0 1011 823 label
+(12) {/Times-Roman 0.500 cf} 1 16 0 979 823 label
+(13) {/Times-Roman 0.500 cf} 1 16 0 947 823 label
+(14) {/Times-Roman 0.500 cf} 1 16 0 915 823 label
+(15) {/Times-Roman 0.500 cf} 1 16 0 883 823 label
+(16) {/Times-Roman 0.500 cf} 1 16 0 851 823 label
+(1) {/Times-Roman 0.500 cf} 1 16 0 1331 759 label
+(2) {/Times-Roman 0.500 cf} 1 16 0 1363 759 label
+(3) {/Times-Roman 0.500 cf} 1 16 0 1395 759 label
+(4) {/Times-Roman 0.500 cf} 1 16 0 1427 759 label
+(5) {/Times-Roman 0.500 cf} 1 16 0 1459 759 label
+(6) {/Times-Roman 0.500 cf} 1 16 0 1491 759 label
+(7) {/Times-Roman 0.500 cf} 1 16 0 1523 759 label
+(8) {/Times-Roman 0.500 cf} 1 16 0 1555 759 label
+(9) {/Times-Roman 0.500 cf} 1 16 0 1555 823 label
+(10) {/Times-Roman 0.500 cf} 1 16 0 1523 823 label
+(11) {/Times-Roman 0.500 cf} 1 16 0 1491 823 label
+(12) {/Times-Roman 0.500 cf} 1 16 0 1459 823 label
+(13) {/Times-Roman 0.500 cf} 1 16 0 1427 823 label
+(14) {/Times-Roman 0.500 cf} 1 16 0 1395 823 label
+(15) {/Times-Roman 0.500 cf} 1 16 0 1363 823 label
+(16) {/Times-Roman 0.500 cf} 1 16 0 1331 823 label
+(14) {/Times-Roman 0.500 cf} 1 16 0 915 1495 label
+(13) {/Times-Roman 0.500 cf} 1 16 0 947 1495 label
+(12) {/Times-Roman 0.500 cf} 1 16 0 979 1495 label
+(11) {/Times-Roman 0.500 cf} 1 16 0 1011 1495 label
+(10) {/Times-Roman 0.500 cf} 1 16 0 1043 1495 label
+(9) {/Times-Roman 0.500 cf} 1 16 0 1075 1495 label
+(8) {/Times-Roman 0.500 cf} 1 16 0 1107 1495 label
+(7) {/Times-Roman 0.500 cf} 1 16 0 1139 1495 label
+(6) {/Times-Roman 0.500 cf} 1 16 0 1171 1495 label
+(5) {/Times-Roman 0.500 cf} 1 16 0 1203 1495 label
+(4) {/Times-Roman 0.500 cf} 1 16 0 1235 1495 label
+(3) {/Times-Roman 0.500 cf} 1 16 0 1267 1495 label
+(2) {/Times-Roman 0.500 cf} 1 16 0 1299 1495 label
+(1) {/Times-Roman 0.500 cf} 1 16 0 1331 1495 label
+0  1.00 1299 855 1299 743 1587 743 1587 855 4 polygon
+0  1.00 1043 1207 1043 1079 1363 1079 1363 1207 4 polygon
+1.00 0 1651 1495 5V
+1.00 0 1587 631 gnd
+1.00 0 1075 631 gnd
+1.00 0 1203 999 gnd
+1  1.00 1203 999 1203 1079 2 polygon
+1  1.00 1075 631 1075 743 2 polygon
+1  1.00 1555 631 1555 743 2 polygon
+1.00 0 691 919 5V
+1  1.00 691 887 851 887 851 855 3 polygon
+1  1.00 851 887 883 887 883 855 3 polygon
+1  1.00 883 887 915 887 915 855 3 polygon
+1  1.00 915 887 947 887 947 855 3 polygon
+1.00 270 1859 1143 diode
+1.00 315 1875 1191 arrowhead
+1.00 270 1859 1047 diode
+1.00 270 1859 951 diode
+1.00 270 1859 855 diode
+1.00 270 1859 663 diode
+1.00 315 1875 1095 arrowhead
+1.00 315 1875 999 arrowhead
+1.00 315 1875 903 arrowhead
+1.00 315 1875 711 arrowhead
+1  1.00 1907 1047 2003 1047 2 polygon
+1  1.00 1907 951 2003 951 2 polygon
+1  1.00 1907 855 2003 855 2 polygon
+1  1.00 1907 663 2003 663 2 polygon
+1.00 0 2003 631 gnd
+1  1.00 2003 631 2003 1143 1891 1143 3 polygon
+1.00 270 1747 1143 resistor
+1.00 270 1747 1047 resistor
+1.00 270 1747 951 resistor
+1.00 270 1747 855 resistor
+1.00 270 1747 663 resistor
+1  1.00 1043 1479 1043 1431 1651 1431 1651 1399 4 polygon
+1.00 0 1651 1399 gnd
+1  1.00 1075 1479 1075 1431 2 polygon
+1  1.00 1107 1479 1107 1431 2 polygon
+1  1.00 1139 1479 1139 1431 2 polygon
+1  1.00 1331 1479 1331 1431 2 polygon
+1  1.00 1203 1479 1203 1431 2 polygon
+1  1.00 1299 1479 1299 1463 1651 1463 3 polygon
+1  1.00 1267 1479 1267 1447 1811 1447 3 polygon
+1.00 0 1843 1447 resistor
+1.00 0 1843 1399 gnd
+1.00 270 1827 1447 arrowhead
+1.00 0 1843 1543 arrow
+(-12V) {/Times-Roman 0.750 cf} 1 16 0 1811 1607 label
+(100k) {/Times-Roman 0.750 cf} 1 16 0 1875 1447 label
+(Contrast) {/Times-Roman 0.750 cf} 1 16 0 1875 1415 label
+(220) {/Times-Roman 0.750 cf} 1 16 0 1715 1175 label
+(220) {/Times-Roman 0.750 cf} 1 16 0 1715 1079 label
+(220) {/Times-Roman 0.750 cf} 1 16 0 1715 983 label
+(220) {/Times-Roman 0.750 cf} 1 16 0 1715 887 label
+(220) {/Times-Roman 0.750 cf} 1 16 0 1715 695 label
+1.00 270 851 951 resistor
+1  1.00 787 887 787 951 2 polygon
+1.00 90 963 951 switch
+1  1.00 1043 951 1011 951 2 polygon
+(Reset) {/Times-Roman 0.750 cf} 1 16 0 963 919 label
+1  1.00 1043 951 1139 951 1139 999 1203 999 4 polygon
+1  1.00 899 951 899 1015 1171 1015 1171 1079 4 polygon
+1  1.00 1139 1079 1139 1031 467 1031 3 polygon
+1  1.00 1075 1079 1075 1063 563 1063 563 631 883 631 883 743 6 polygon
+1  1.00 1107 1079 1107 1047 579 1047 579 615 915 615 915 743 6 polygon
+1.00 90 435 1031 arrow
+(200Hz Clk) {/Times-Roman 0.750 cf} 1 16 0 371 1047 label
+(1k) {/Times-Roman 0.750 cf} 1 16 0 835 983 label
+1  1.00 1011 1479 1011 1399 1395 1399 1395 999 1235 999 1235 1079 6 polygon
+1  1.00 1267 1079 1267 983 1411 983 1411 1383 979 1383 979 1479 6 polygon
+1  1.00 1299 1079 1299 967 1427 967 1427 1367 947 1367 947 1479 6 polygon
+1  1.00 1331 1079 1331 951 1443 951 1443 1351 915 1351 915 1479 6 polygon
+1  1.00 1331 1207 1331 1319 1235 1319 1235 1479 4 polygon
+1  1.00 1299 1207 1299 1303 1171 1303 1171 1479 4 polygon
+1.00 90 435 1287 arrow
+(Divider Reset) {/Times-Roman 0.750 cf} 1 16 0 371 1303 label
+1  1.00 1203 1207 1203 1271 1523 1271 3 polygon
+1.00 0 1523 1303 5V
+1  1.00 1235 1207 1235 1287 467 1287 3 polygon
+1  1.00 1491 743 1491 663 1683 663 3 polygon
+1  1.00 1491 663 1491 503 547 503 547 1223 1075 1223 1075 1207 6 polygon
+1  1.00 1523 743 1523 487 467 487 3 polygon
+1.00 90 435 487 arrow
+(Data) {/Times-Roman 0.750 cf} 1 16 0 371 503 label
+1  1.00 1555 631 1587 631 2 polygon
+1.00 -271 579 1495 diode
+1.00 270 691 1495 resistor
+1.00 0 499 1495 gnd
+1  1.00 531 1495 499 1495 2 polygon
+(220) {/Times-Roman 0.750 cf} 1 16 0 659 1527 label
+1.00 45 563 1543 arrowhead
+1  1.00 1107 1207 1107 1239 755 1239 755 1495 4 polygon
+1  1.00 1139 1207 1139 1255 499 1255 499 1175 451 1175 5 polygon
+1.00 90 435 1175 arrow
+(1Mhz Clk) {/Times-Roman 0.750 cf} 1 16 0 371 1191 label
+("0") {/Times-Roman 0.750 cf} 1 16 0 2035 1143 label
+("1") {/Times-Roman 0.750 cf} 1 16 0 2035 1047 label
+("Mark") {/Times-Roman 0.750 cf} 1 16 0 2035 951 label
+("Error") {/Times-Roman 0.750 cf} 1 16 0 2035 855 label
+(Data) {/Times-Roman 0.750 cf} 1 16 0 2035 663 label
+(Errors Past Minute) {/Times-Roman 0.750 cf} 1 16 0 531 1559 label
+(WWVB TIME \(GMT\)) {/Times-Roman 1.000 cf} 1 16 0 1011 1607 label
+(16:41:23) {/Times-Roman 1.000 cf} 1 16 0 1107 1559 label
+1  1.00 371 599 403 599 403 567 435 567 435 599 499 599 6 polygon
+1  1.00 371 1367 403 1367 403 1399 435 1399 435 1367 499 1367 6 polygon
+1  1.00 1427 743 1427 727 1683 727 1683 855 4 polygon
+1  1.00 1043 743 1043 711 1459 711 1459 743 4 polygon
+1  1.00 1395 743 1395 631 2 polygon
+1  1.00 1523 855 1523 951 1683 951 3 polygon
+1  1.00 1683 1047 1507 1047 1507 903 1459 903 1459 855 5 polygon
+1  1.00 1395 631 1555 631 2 polygon
+1  1.00 1011 743 1011 519 1635 519 1635 871 1555 871 1555 855 6 polygon
+1  1.00 947 887 1139 887 1139 727 1331 727 1331 743 5 polygon
+1  1.00 979 743 979 695 1235 695 1235 887 1491 887 1491 855 6 polygon
+1  1.00 1395 855 1395 903 1219 903 1219 679 947 679 947 743 6 polygon
+1  1.00 1363 743 1363 727 2 polygon
+1  1.00 1331 871 1331 855 2 polygon
+1  1.00 1427 871 1427 855 2 polygon
+1  1.00 1075 871 1075 855 2 polygon
+1  1.00 1043 871 1043 855 2 polygon
+1  1.00 1011 871 1011 855 2 polygon
+1  1.00 979 871 979 855 2 polygon
+1  1.00 1171 1223 1171 1207 2 polygon
+1  1.00 1267 1223 1267 1207 2 polygon
+(Grn) {/Times-Roman 1.000 cf} 1 16 0 1891 1159 label
+(Red) {/Times-Roman 1.000 cf} 1 16 0 1891 1063 label
+(Yel) {/Times-Roman 1.000 cf} 1 16 0 1891 967 label
+(Red) {/Times-Roman 1.000 cf} 1 16 0 1891 871 label
+(Red) {/Times-Roman 1.000 cf} 1 16 0 1891 679 label
+(Red) {/Times-Roman 1.000 cf} 1 16 0 563 1431 label
+1.00 0 1523 1239 capacitor
+1.00 0 1523 1207 gnd
+1  1.00 1683 1143 1587 1143 1587 1079 1491 1079 1491 919 1363 919 1363 855 
+7 polygon
+(0.1) {/Times-Roman 0.750 cf} 1 16 0 1555 1207 label
+1.00 0 691 823 capacitor
+1.00 0 691 775 gnd
+(0.1) {/Times-Roman 0.750 cf} 1 16 0 723 775 label
+(0-12v) {/Times-Roman 0.750 cf} 1 16 0 435 503 label
+1  1.00 1683 407 1683 551 2195 551 3 polygon
+(PIC-16C84) {/Times-Roman 0.850 cf} 1 16 0 1123 1127 label
+1  1.00 1683 407 2195 407 2195 551 3 polygon
+(Hatachi LM016 LCD Display  \(16x2\)) {/Times-Roman 0.600 cf} 
+1 16 0 1011 1671 label
+(From receiver) {/Times-Roman 0.600 cf} 1 16 0 371 455 label
+(From Dividers) {/Times-Roman 0.600 cf} 1 16 0 371 999 label
+(From Dividers) {/Times-Roman 0.600 cf} 1 16 0 371 1143 label
+(To Dividers) {/Times-Roman 0.600 cf} 1 16 0 371 1255 label
+(WWVB Decoder Display) {/Times-Roman 1.000 cf} 1 16 0 1715 503 label
+(Emmett Kyle  2-27-2000) {/Times-Roman 1.000 cf} 1 16 0 1715 439 label
+0  1.00 819 855 819 743 1107 743 1107 855 4 polygon
+1  1.00 851 743 851 647 1075 647 3 polygon
+(1) {/Times-Roman 0.500 cf} 1 16 0 851 759 label
+(4555) {/Times-Roman 0.750 cf} 1 16 0 931 791 label
+(4050) {/Times-Roman 0.750 cf} 1 16 0 1411 791 label
+pgsave restore showpage
+
+%%Trailer
+XCIRCsave restore
+%%EOF
