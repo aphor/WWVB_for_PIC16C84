@@ -1,0 +1,1182 @@
+///////////////////////////////////////////////////////////////////////////////
+// WWVB Decoder Version 2.0 using a PIC16C84 and a LCD 2X16 display.
+// Hopefully the final version.
+// This was assembled with c2c version 3.27.8e and gpasm 0.0.7d alpha
+// Thanks to S.C. Hageman for the basic concept of the main function,
+// and some of the LCD code.
+// Emmett Kyle 2/22/2000
+///////////////////////////////////////////////////////////////////////////////
+
+
+#pragma CLOCK_FREQ 1000000
+
+asm
+{
+       __CONFIG  03FF9          ;;Set for xtal clk and no wdt.
+    goto    _main__code
+}
+
+// Defines for set_bit and clear_bit functions.
+#define BIT_0 0
+#define BIT_1 1
+#define BIT_2 2
+#define BIT_3 3
+#define BIT_4 4
+#define BIT_5 5
+#define BIT_6 6
+#define BIT_7 7
+
+// Defines for bit masks.
+#define BIT_0_MASK 0x1
+#define BIT_1_MASK 0x2
+#define BIT_2_MASK 0x4
+#define BIT_3_MASK 0x8
+#define BIT_4_MASK 0x10
+#define BIT_5_MASK 0x20
+#define BIT_6_MASK 0x40
+#define BIT_7_MASK 0x80
+
+// Defines for the log register.
+#define ERRORS_PAST_MINUTE 0
+#define INITIAL_PASS 1
+#define TICK 2
+#define DATA_GOOD 3
+#define SYNC 4
+
+char index;     // Index register for display LUT's.
+
+char acme;      // General purpose register...
+char acme2;     // General purpose register...
+char acme3;     // General purpose register...
+
+char sync_abort;    // Used to abort the sychronizing process if
+            // there is either no signal, or a noisy signal.
+
+char Seconds_clock=0;   // These three make up the actual clock.
+char Minutes_clock=0;
+char Hours_clock=0;
+
+char Minutes=0;     // Decoded minutes and hours data.
+char Hours=0;
+char Min_chk=0;
+char Hr_chk=0;
+
+char pass=0;        // Counts how many times through a minute loop.
+
+char log=0;         // Status register. 
+
+char leap=0;        // Used to check the seconds against Mark pulses.
+
+///////////////////////////////////////////////////////////////////////////////
+// log register bits:
+// Bit 0 = ERRORS_PAST_MINUTE Set when no errors.
+// Bit 1 = INITIAL_PASS Set after 1st pass.
+// Bit 2 = TICK Clears when TMR0 overflows, indicating beginning of a second.
+// Bit 3 = DATA_GOOD Set when decoded Minute and Hour data compared to Minute
+//         and Hour data from the previous minute is good.
+// Bit 4 = SYNC Active low. Cleared when syncing counters. Set High after
+//         the pass count is incremented so we only sync once.
+///////////////////////////////////////////////////////////////////////////////
+// LCD is connected to port B.
+//  RB5  RB4  RB3  RB2  RB1  RB0 - PORT NAME
+//   11   10   9    8    7    6  - PORT PINS
+//   E   R/S   D7   D6   D5   D4 - LCD  NAME
+//   6    4    14   13   12   11 - LCD  PINS
+///////////////////////////////////////////////////////////////////////////////
+// LUT's for LCD init and messages are located at the beginning of prog memory,
+// after the interrupt handler, and start code. The main program begins at
+// 0xA8. Each table has 24 bytes reserved. The display needs 16 max + overhead
+// per line.
+// This was done so the LUT's would not be accidently located across a boundry
+// where the address is > 256. The ADDWF   PCL,F instruction does not generate
+// a carry past bit > N+7. Bits > N+7 get loaded from the PCLATH register.
+// Brain dead...    1/17/2000 
+//
+// LUT locations:
+// Table 1  lcd_lut         0x30
+// Table 2  start_msg_lut       0x42
+// Table 3  sync_msg_lut        0x54
+// Table 4  decode_msg_lut      0x66
+// Table 5  disp_time       0x78
+///////////////////////////////////////////////////////////////////////////////
+void strobe_e_long()
+{
+        // Set enable high for 1 cycle then low
+
+        output_high_port_b(5);
+        nop();
+        output_low_port_b(5);
+
+        // Wait for longest lcd routine to finish, takes time
+        // but saves code in not checking for the busy flag.
+        delay_ms(5);
+}
+///////////////////////////////////////////////////////////////////////////////
+void strobe_e()
+{
+        // Set enable high for 1 cycle then low
+
+        output_high_port_b(5);
+        nop();
+        output_low_port_b(5);
+
+        // Wait for shortest lcd routine to finish, takes time
+        // but saves code in not checking for the busy flag.
+        delay_ms(1);
+}
+///////////////////////////////////////////////////////////////////////////////
+void write_lcd(char ch)
+{
+        // writes the char ch to the lcd. HB then LB.
+
+asm
+        {
+        swapf param00_write_lcd,W       ;;Swap bits 4-7 <> 0-3.
+        andlw D'15'                     ;;Mask off lower 4-bits.
+        iorlw D'16'                     ;;Turn on RS so the display will take
+        movwf PORTB                     ;;this as data.
+        }
+
+        strobe_e();
+asm
+        {
+        movf param00_write_lcd, W
+        andlw D'15'                     ;;Mask off lower 4-bits.
+        iorlw D'16'                     ;;Turn on RS so the display will take
+        movwf PORTB                     ;;this as data.
+        }
+        strobe_e();
+
+        // Clear port B
+        output_port_b(0x00);
+}
+///////////////////////////////////////////////////////////////////////////////
+void first_line()
+{
+        // Set the LCD to the first display line
+        // Send 0xc0 for second line. Use 0x80 to move
+        // to the first line.
+
+        output_port_b(0x08);
+        strobe_e();
+
+        output_port_b(0x00);
+        strobe_e();
+}
+///////////////////////////////////////////////////////////////////////////////
+void second_line()
+{
+        // Set the LCD to the second display line
+        // Send 0xc0 for second line. Use 0x80 to move
+        // to the first line.
+        output_port_b(0x0c);
+        strobe_e();
+
+        output_port_b(0x00);
+        strobe_e();
+
+}
+///////////////////////////////////////////////////////////////////////////////
+void init_dsp()
+{
+        // Clear and initilize LCD panel to 4 bit mode,
+        // two line mode, cursor off, display on.
+        // RS needs to be low for all of these instructions.
+        // Takes 70 mS to complete.
+
+asm
+        {
+
+        movlw D'14'
+        movwf _index            ;;number of lut entries
+        }
+
+asm:loop_init_dsp
+
+asm
+        {
+        movf  _index,w
+        call lcd_lut
+        movwf PORTB
+    }
+
+        strobe_e_long();
+asm
+    {
+        decfsz _index,f
+        goto loop_init_dsp
+        clrw
+        clrf PORTB      ;;Clean up port on exit
+        }
+
+}
+///////////////////////////////////////////////////////////////////////////////
+char bcd_1s_2_ascii(char data)
+{
+
+asm
+        {
+        andlw D'15' ;;Mask off lower 4-bits.
+        addlw D'48' ;;Add an ASCII offset of the number "0" to the BCD
+        return      ;;number.
+        }
+}
+///////////////////////////////////////////////////////////////////////////////
+char bcd_10s_2_ascii(char data)
+{
+asm
+        {
+        swapf param00_bcd_10s_2_ascii,W     ;;Swap bits 4-7 <> 0-3.
+        andlw D'15'             ;;Mask off lower bits.
+        addlw D'48'             ;;Add an ASCII offset 
+                        ;;of the number "0"
+        return                  ;;to the BCD number.
+        }
+}
+///////////////////////////////////////////////////////////////////////////////
+start_msg()
+{
+        first_line();
+
+asm
+        {
+        movlw D'16'
+        movwf _index            ;;number of lut entries
+        }
+
+asm:loop_start_msg
+
+asm
+        {
+        movf  _index,w
+        call start_msg_lut
+        movwf param00_write_lcd
+        call _write_lcd
+        decfsz _index,f
+        goto loop_start_msg
+        clrw
+        }
+
+    // Delay one second.
+    for(index = 0;index < 5;index ++)
+    {
+        delay_ms(200);
+    }
+}
+///////////////////////////////////////////////////////////////////////////////
+sync_msg()
+{
+        second_line();
+
+asm
+        {
+        movlw D'16'
+        movwf _index            ;;number of lut entries
+        }
+
+asm:loop_sync_msg
+
+asm
+        {
+        movf  _index,w
+        call sync_msg_lut
+        movwf param00_write_lcd
+        call _write_lcd
+        decfsz _index,f
+        goto loop_sync_msg
+        clrw
+        }
+}
+///////////////////////////////////////////////////////////////////////////////
+decode_msg()
+{
+        second_line();
+asm
+        {
+        movlw D'16'
+        movwf _index            ;;number of lut entries
+        }
+
+asm:loop_decode_msg
+
+asm
+        {
+        movf  _index,w
+        call decode_msg_lut
+        movwf param00_write_lcd
+        call _write_lcd
+        decfsz _index,f
+        goto loop_decode_msg
+        clrw
+        }
+}
+///////////////////////////////////////////////////////////////////////////////
+void display_time()
+{
+
+// Write second line first so there is no apparent display delay when 
+// seconds update.
+
+        second_line();
+
+    for(index=0 ; index < 4 ; index ++)
+    {
+        write_lcd(' '); // 1 - 4
+    }
+
+        write_lcd(bcd_10s_2_ascii(char_to_bcd(Hours_clock)));
+        write_lcd(bcd_1s_2_ascii(char_to_bcd(Hours_clock)));
+
+        write_lcd(':'); // 7
+
+        write_lcd(bcd_10s_2_ascii(char_to_bcd(Minutes_clock)));
+        write_lcd(bcd_1s_2_ascii(char_to_bcd(Minutes_clock)));
+
+        write_lcd(':'); // 10
+
+    write_lcd(bcd_10s_2_ascii(char_to_bcd(Seconds_clock)));
+    write_lcd(bcd_1s_2_ascii(char_to_bcd(Seconds_clock)));
+
+    for(index=0; index < 4 ; index ++)
+    {
+        write_lcd(' '); // 13 - 16
+    }
+
+        first_line();
+asm
+        {
+        movlw D'16'
+        movwf _index            ;;number of lut entries
+        }
+
+asm:loop_display_time
+
+asm
+        {
+        movf  _index,w
+        call disp_time_lut
+        movwf param00_write_lcd
+        call _write_lcd
+        decfsz _index,f
+        goto loop_display_time
+        clrw
+        }
+}
+////////////////////////////////////////////////////////////////////////////////
+void clock( void )
+{
+Seconds_clock ++;
+if(Seconds_clock > 0x3B)            // 59 Dec.
+    {
+    Seconds_clock = 0;
+    Minutes_clock ++;
+    }
+
+    if(Minutes_clock > 0x3B)        // 59 Dec.
+        {
+        Minutes_clock = 0;
+        Hours_clock ++;
+        }
+
+        if(Hours_clock > 0x17)      // 23 Dec.
+            {
+            Hours_clock = 0;
+            }
+}
+////////////////////////////////////////////////////////////////////////////////
+void interrupt( void )
+{
+    if(INTCON & BIT_2_MASK)
+    {
+    TMR0=56;            // Sets TMR0 to overflow after 1 second.
+    clear_bit( log, TICK );
+    clear_bit( INTCON, T0IF );      // Clear TMR0 overflow flag
+    clock();            // Incerment the clock 1 sec.
+
+    sync_abort ++;          // Increment sync abort ++
+                    // so we can tell how long we have been
+                    // trying to synchronize.
+    }
+}
+////////////////////////////////////////////////////////////////////////////////
+void find_data_edge( void )
+{
+
+sync_abort=0;
+
+while( input_pin_port_a( 1 ) == 0 ) // Find the -_ edge of the data.
+{
+    if( sync_abort > 0x8 )          // Bail out if no signal.
+    {
+        if(log & BIT_1_MASK)
+        {
+            asm
+            {
+            goto sync_escape    ;;If not first pass, abort.
+            }
+        }
+        else
+        {
+            asm
+            {
+            goto start__code    ;;Do until we can sync.
+            }
+        }
+    }
+} // End while
+
+while( input_pin_port_a( 1 ) == 1 )
+{
+    if( sync_abort > 0x8 )          // Bail out if no signal.
+    {
+        if(log & BIT_1_MASK)
+        {
+            asm
+            {
+            goto sync_escape    ;;If not first pass, abort.
+            }
+        }
+        else
+        {
+            asm
+            {
+            goto start__code    ;;Do until we can sync.
+            }
+        }
+    }
+} // End while
+
+} // End find_data_edge
+////////////////////////////////////////////////////////////////////////////////
+// sync_clock()
+// TMR0 is connected to a 200Hz clock from the divider chain.
+////////////////////////////////////////////////////////////////////////////////
+void sync_clock( void )
+{
+acme = 0;
+acme2 = 0;
+acme3 = 0;
+
+sync_msg();
+
+clear_bit( log, SYNC );     // Lock out so we only sync once.
+
+find_data_edge();
+
+while( acme < 2 )
+{
+    acme2 = TMR0;
+
+    // Sleep 6 ms. Delay long enough for TMR0 to
+    // increment at least one count.
+    // It will take 3 noise free seconds to get synchronized.
+
+    delay_ms(6);
+
+    find_data_edge();
+
+    acme3 = TMR0;
+
+    if((acme2 ^ acme3) == 0)
+    {
+    acme++;
+    }
+} // End of while
+
+// If we got here, then we are synchronized,
+
+output_high_port_b( 7 );    // Toggle b7 _-_ resetting counters.
+output_low_port_b( 7 );
+clear_bit( log, TICK );
+
+
+// Sometimes the clock() is just about to update
+// when TMR0 gets reset. So update the clock() if  245 <= TMR0 <= 255.
+// This will update the clock() until it is 50 ms slow.
+
+asm
+    {
+    movf TMR0,w
+    addlw D'0'      ;;255 - hi_limit (255-255)
+    addlw D'11'     ;;hi_limit - lo_limit +1 (255-245+1)
+    btfsc STATUS, C
+    call _clock
+    }
+
+
+TMR0=56;            // Sets TMR0 to overflow in 1 second with a
+                // 200Hz clock.
+}
+////////////////////////////////////////////////////////////////////////////////
+// sync_clock_delayed()
+// Sync the divider chain 30 seconds after the hour.
+////////////////////////////////////////////////////////////////////////////////
+void sync_clock_delayed( void )
+{
+    if(log & BIT_4_MASK)    // Don't do it if we just did it.
+    {
+        if(log & BIT_1_MASK)    // Not 1st pass
+        {
+            if(Minutes_clock == 0)
+            {
+                if(Seconds_clock == 30)
+                {
+                sync_clock();
+                }
+            }
+        }
+    }
+
+    if(Minutes_clock == 1)
+    {
+    set_bit( log, SYNC );       // Set SYNC so we can sync again.
+    }
+}
+////////////////////////////////////////////////////////////////////////////////
+// sanity()
+// This is a catch all.
+// Check seconds against the Mark pulses once per hour if there are no errors.
+// during the minute. If seconds are out of sync, then reboot.
+// Its main puropse is to catch up when leap seconds are added.
+// They are added or subtracted around 23:59:XX at the end of a month.
+// It should also correct any unforeseen synchronization errors.
+////////////////////////////////////////////////////////////////////////////////
+void sanity( void )
+{
+    if(log & BIT_1_MASK)                // Not 1st pass.
+    {
+        if(log & BIT_0_MASK)            // No errors past min.
+        {
+            if(Minutes_clock == 0)      // Do it on the hour.
+            {
+                if(Seconds_clock == 40) // Check 40 sec Mark
+                {
+                    leap=input_port_a();
+                    leap &= 0xC;
+
+                    if(leap == 8)
+                    {}
+                    else
+                    {
+                    asm
+                        {
+                        goto start__code
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+////////////////////////////////////////////////////////////////////////////////
+// set_clock()
+// Load the clock with the decoded data.
+////////////////////////////////////////////////////////////////////////////////
+void set_clock( void )
+{
+    // The clock() will make seconds
+    // Seconds + 1, so Seconds = 0.
+    // The clock gets set between seconds +0 and seconds +1.
+    // So the display will start when at seconds +1.
+    Seconds_clock = 0;   
+
+    Minutes_clock = Minutes;
+
+    // Minutes decoded are the previous minute.
+    // So we need to add one to minutes.
+    Minutes_clock ++;
+
+    Hours_clock = Hours;
+}
+////////////////////////////////////////////////////////////////////////////////
+// load_chk_data()
+// Load a copy of the decoded data into Min_chk and Hr_chk.
+// increment Min_chk ++, carry to Hr_chk if required.
+////////////////////////////////////////////////////////////////////////////////
+void load_chk_data( void )
+{
+
+Min_chk = Minutes;
+Hr_chk = Hours;
+
+// Add one to minutes so Min_chk and
+// Hr_chk can be compared to data
+// decoded in the next minute.
+Min_chk ++;
+
+    if(Min_chk > 0x3B)          // 59 Dec.
+        {
+        Min_chk = 0;
+        Hr_chk ++;
+        }
+        if(Hr_chk > 0x17)       // 23 Dec.
+            {
+            Hr_chk = 0;
+            }
+}
+////////////////////////////////////////////////////////////////////////////////
+// chk_data()
+// Compares decoded Minutes and Hours registers with the previous minute
+// plus one. If no difference, then the decoded data is good, so set
+// log,DATA_GOOD to indicate the decoded data is good.
+////////////////////////////////////////////////////////////////////////////////
+void chk_data( void )
+{
+    Min_chk ^= Minutes;
+    Hr_chk  ^= Hours;
+    Min_chk |= Hr_chk;
+    if(Min_chk == 0)
+        {
+        set_bit( log, DATA_GOOD );  // Set DATA_GOOD bit.
+        }
+}
+////////////////////////////////////////////////////////////////////////////////
+// pop_count()
+// This code is from Dmitry Kiryashov.
+// It finds the number of 1's in a byte.
+// I thought mine was cool, using 16 instructions and a tmp variable,
+// but this one only uses 12 instructions and no tmp variable.
+////////////////////////////////////////////////////////////////////////////////
+char pop_count(char diff)
+{
+asm
+    {
+    rrf   param00_pop_count,W
+    andlw 0x55
+    subwf param00_pop_count,F
+    movfw param00_pop_count
+    andlw 0x33
+    addwf param00_pop_count,F
+    rrf   param00_pop_count,F
+    addwf param00_pop_count,F
+    rrf   param00_pop_count,F
+    swapf param00_pop_count,W
+    addwf param00_pop_count,W
+    andlw 0x0F
+    return
+    }
+}
+////////////////////////////////////////////////////////////////////////////////
+char classify_pulse()
+{
+ 
+char raw_data=0;
+ 
+char zero;
+char one;
+char mark;
+ 
+// acme =  a flag register. Bit 0-2 are used to determine 
+// a ZERO, ONE, MARK, or Error condition.
+// Also used for the for loop.
+
+
+while(log & BIT_2_MASK)     // Wait for TMR0 overflow. (TICK bit clear)
+{}              // While will not work correctly w/o these!
+
+set_bit(log, TICK);
+
+// Do a sanity check once per hour. See if the seconds match
+// the Mark pulse at 40 seconds. If they don't, reboot.
+sanity();
+
+// Display the time, if not on the initial pass. Could have put this in the
+// interrupt handler, but then there would be problems when trying to sync
+// the dividers, and more if's would have to be added. It works fine here.
+
+if( log & BIT_1_MASK )
+{display_time();}
+else
+{ delay_ms(75); }       // Pad the delay time so we end up with 110ms
+                // for the first delay if we are on the
+                // initial pass, since the display is not
+                // updating.
+                // 75.35 ms for delay_ms(75)
+                // 75.82 ms for display_time()
+
+
+
+        for( acme=0 ; acme<8 ; acme++ )
+        {
+        if(acme == 0)
+        { acme2 = 34; }     // display_time() takes about 76 mS
+        else            // so we need a shorter delay
+        { acme2 = 110; }    // the first time through.
+
+        raw_data = raw_data << 1;       // Shift 7 times with 8 passes.
+                        // (First shift does not count.)
+    delay_ms(acme2);
+
+        if( input_pin_port_a( 1 ) == 1 )    // Wake up and smell the data.
+        {raw_data |= 0x1;}
+        else
+        {raw_data &= 0xfe;}
+                        // raw_data = the combined 8 
+                        // samples. 
+        } // End for.
+
+
+// Check to see if the data is always high (No signal) or always low.
+// If so, log error. This looks for raw_data to be either 0 or 255.
+// The receiver goes High if no signal, and all low during an overload.
+
+asm
+{
+movf _raw_data_classify_pulse,W
+addlw D'255'                     ;255 - high_limit.
+addlw D'2'                       ;high_limit - low_limit + 1
+btfsc STATUS, C
+goto label_1000
+}
+
+ 
+zero = raw_data ^ 0xFF;             // See which pattern the raw
+one = raw_data ^ 0x0F;              // data matches the most.
+mark = raw_data ^ 0x01;
+ 
+zero = pop_count(zero);             // Count how many 1's are set.
+one = pop_count(one);               // The one with the least amount
+mark = pop_count(mark);             // wins.
+                        // If two are = and have the
+                        // lowest number, then Error. 
+
+// Cast votes on who will win.
+// acme register: BIT_0 = Zero, BIT_1 = One, BIT_2 = Mark. 
+acme=0;
+
+        if( zero > one )
+        {set_bit( acme, BIT_0 );}
+        else
+        {set_bit( acme, BIT_1 );}
+        if( zero == one )
+        {
+         clear_bit( acme, BIT_1);
+    }
+ 
+        if( one > mark)
+        {set_bit( acme, BIT_1 );}
+        else
+        {set_bit( acme, BIT_2 );}
+        if( one == mark )
+        {
+         clear_bit( acme, BIT_2);
+    }
+ 
+        if( mark > zero )
+        {set_bit( acme, BIT_2 );}
+        else
+    {
+            if( mark == zero )  // Do nothing if mark = zero because
+        {}          // if BIT_0 is set from a previous
+        else            // vote, then we don't want to
+                    // clear it.
+        {set_bit( acme, BIT_0 );}
+    }
+
+// Count how many votes we have. If < 2, then two patterns have the
+// same likelyhood, and are the lowest numbers, so error. Otherwise the lowest
+// number (vote of 0) wins.
+////////////////////////////////////////////////////////////////////////////////
+// PORT A bit 0 - Errors past minute.
+// PORT A bits 3 2
+//            0 0 - Zero
+//            0 1 - One
+//            1 0 - Mark
+//            1 1 - Error
+////////////////////////////////////////////////////////////////////////////////
+                            // Error
+asm
+{
+        movf _acme, W
+        movwf param00_pop_count
+        call _pop_count
+    addlw D'254'
+    addlw D'2'
+    btfss STATUS, C
+    goto label_1004
+}
+
+asm:label_1000
+
+asm
+{
+    bsf PORTA, 2
+        bsf PORTA, 3
+    bcf _log,0          ;;Enable ERROR_PAST_MINUTE (low)
+    bsf PORTA, 0
+        movlw D'3'
+        return
+}
+                            // Zero
+asm:label_1004
+
+asm
+{
+    btfsc _acme, 0
+    goto label_1001
+        bcf PORTA, 2
+        bcf PORTA, 3
+        movlw D'0'
+        return
+}
+
+asm:label_1001
+                            // One
+asm
+{
+        btfsc _acme, 1
+    goto label_1002
+    bsf PORTA, 2
+    bcf PORTA, 3
+        movlw D'1'
+        return
+}
+
+asm:label_1002
+                            // Mark
+asm
+{
+    btfsc _acme, 2
+    goto label_1003
+    bcf PORTA, 2
+        bsf PORTA, 3
+        movlw D'2'
+        return
+}
+
+asm:label_1003
+
+}
+////////////////////////////////////////////////////////////////////////////////
+main()
+{
+// Disable interrupts
+disable_interrupt( GIE );
+
+// Initialize the PIC.
+set_bit( STATUS, RP0 );     // Tris regs. live in a different memory page.
+set_tris_a( 0xF2 );
+set_tris_b( 0x00 );
+clear_bit( STATUS, RP0 );   // Go back to main page.
+OPTION_REG = 0xBF;      // No p-up,int -_ ,TMR0-RA4,TMR0 -_
+                // ,wdt-prescaler,x,x,x
+output_port_b( 0x00 );
+output_port_a( 0x0C );      // Set Error for decoder status.
+
+// Wait for LCD to power up, and then initialize it to 4-Bit mode.
+delay_ms(200);
+init_dsp();
+
+start_msg();
+
+enable_interrupt( GIE );
+enable_interrupt( T0IE );   // Enable TMR0 overflow bit.
+clear_bit( INTCON, T0IF );  // Clear TMR0 overflow flag.
+
+sync_clock();   // Sync counters with the received data -_ edge.
+log = 0x11; // Set log register for no errors, initial pass,
+        // and enable SYNC.
+decode_msg();
+
+        //Main loop begins here.
+        while(1)
+        {
+
+    //Sync the counters on the hour, every hour,
+    //30 seconds after the hour.
+    sync_clock_delayed();
+
+
+    //Go here if sync_clock is aborted.
+    asm:sync_escape
+
+        // Find the double Mark, indicating the beginning of a minute.
+    if( classify_pulse() == 2 )     // 59
+    {
+        if( classify_pulse() == 2 ) // 00
+        {
+
+    pass ++;                // Increment the pass counter.
+
+
+if(BIT_1_MASK & (0xFF ^ (log & BIT_1_MASK)))    // Check if initial pass.
+ {
+    if(log & BIT_0_MASK)    // Check ERRORS_PAST_MINUTE flag.
+                // Flag is low if the decoder logged
+                // an error during the past minute.
+    {
+        if(pass == 3)
+        {
+            if(log & BIT_3_MASK)
+            {
+                set_clock();
+                set_bit( log, INITIAL_PASS );
+                clear_bit( log, DATA_GOOD );
+            }
+            else
+            {
+            pass = 0x01;    // If the decoded data isn't good,
+            }       // start over until we get good data.
+        }
+    }
+
+    else
+    { 
+    // Keep going until we get an error free minute.
+    pass = 0x01; 
+    clear_bit( log, DATA_GOOD );
+    }
+
+ }
+        set_bit( log, ERRORS_PAST_MINUTE );
+        clear_bit( PORTA,BIT_0 );           // Turn off LED.
+
+                // If I got here then we found the beginning of a minute.
+                // Decode minutes and hours information now.
+                // Minutes first.
+
+                                Minutes=0;
+
+                                if( classify_pulse() == 1 )     // 01
+                                        set_bit( Minutes, BIT_6 ) ;
+
+                                if( classify_pulse() == 1 )     // 02
+                                        set_bit( Minutes, BIT_5 ) ;
+
+                                if( classify_pulse() == 1 )     // 03
+                                        set_bit( Minutes, BIT_4 ) ;
+
+                                // Next comes an uncoded bit
+                                classify_pulse();           // 04
+
+                                if( classify_pulse() == 1 )     // 05
+                                        set_bit( Minutes, BIT_3 ) ;
+
+                                if( classify_pulse() == 1 )     // 06
+                                        set_bit( Minutes, BIT_2 ) ;
+
+                                if( classify_pulse() == 1 )     // 07
+                                        set_bit( Minutes, BIT_1 ) ;
+
+                                if( classify_pulse() == 1 )     // 08
+                                        set_bit( Minutes, BIT_0 ) ;
+
+                                // Next comes a Mark pulse, then two uncoded
+                                classify_pulse();           // 09
+                                classify_pulse();           // 10
+                                classify_pulse();           // 11
+
+
+                                // Now hours
+                                Hours=0;
+
+                                if( classify_pulse() == 1 )     // 12
+                                        set_bit( Hours, BIT_5 ) ;
+
+                                if( classify_pulse() == 1 )     // 13
+                                        set_bit( Hours, BIT_4 ) ;
+
+                                // Next comes an uncoded bit
+                                classify_pulse();
+
+                                if( classify_pulse() == 1 )     // 14
+                                        set_bit( Hours, BIT_3 ) ;
+
+                                if( classify_pulse() == 1 )     // 15
+                                        set_bit( Hours, BIT_2 ) ;
+
+                                if( classify_pulse() == 1 )     // 16
+                                        set_bit( Hours, BIT_1 ) ;
+
+                                if( classify_pulse() == 1 )     // 17
+                                        set_bit( Hours, BIT_0 ) ;
+
+    // Convert Minutes and Hours in BCD to binary
+    // so we can do operations on them.
+
+    Minutes = bcd_to_char(Minutes);
+    Hours = bcd_to_char(Hours);
+
+    if(pass == 1)
+    {
+    load_chk_data();
+    }
+
+    if(pass == 2)
+    {
+    chk_data();
+    }
+
+                        } // End of 2nd 'if Mark pulse'.
+
+                } // End of 1st 'if Mark pulse'.
+
+        } // End of main while loop.
+
+} // End of main.
+///////////////////////////////////////////////////////////////////////////////
+// Look Up Tables begin at 0x30, with a length of 24 bytes each.
+// LCD Init. LUT.
+///////////////////////////////////////////////////////////////////////////////
+asm
+    {
+    ORG 0x30
+    }
+
+asm:lcd_lut
+
+asm
+        {
+                addwf   PCL,f
+                retlw   H'00'   ;;0     Place holder
+
+                retlw   H'0C'   ;;1     lut ends here
+                retlw   H'00'
+                retlw   H'06'
+                retlw   H'00'
+                retlw   H'01'
+                retlw   H'00'
+                retlw   H'08'
+                retlw   H'00'
+                retlw   H'08'
+                retlw   H'02'
+                retlw   H'02'
+                retlw   H'03'
+                retlw   H'03'
+                retlw   H'03'   ;;14    lut starts here
+        }
+///////////////////////////////////////////////////////////////////////////////
+// Start message LUT.
+///////////////////////////////////////////////////////////////////////////////
+asm
+    {
+    ORG 0x42
+    }
+
+asm:start_msg_lut
+
+asm
+        {
+                addwf   PCL,f
+                retlw   D'00'   ;;0     Place holder
+
+                retlw   A' '    ;;1     End lut
+                retlw   A'0'
+                retlw   A'.'
+                retlw   A'2'
+                retlw   A'V'
+                retlw   A' '
+                retlw   A'k'
+                retlw   A'c'
+                retlw   A'o'
+                retlw   A'l'
+                retlw   A'C'
+                retlw   A' '
+                retlw   A'B'
+                retlw   A'V'
+                retlw   A'W'
+                retlw   A'W'    ;;16    Begin lut: WWVB Clock V2.0
+    }
+///////////////////////////////////////////////////////////////////////////////
+// Sync message LUT.
+///////////////////////////////////////////////////////////////////////////////
+asm
+    {
+    ORG 0x54
+    }
+
+asm:sync_msg_lut
+
+asm
+        {
+                addwf   PCL,f
+                retlw   D'00'   ;;0     Place holder
+
+                retlw   A' '    ;;1     End lut
+                retlw   A' '
+                retlw   A' '
+                retlw   A'g'
+                retlw   A'n'
+                retlw   A'i'
+                retlw   A'z'
+                retlw   A'i'
+                retlw   A'n'
+                retlw   A'o'
+                retlw   A'r'
+                retlw   A'h'
+                retlw   A'c'
+                retlw   A'n'
+                retlw   A'y'
+                retlw   A'S'    ;;16    Begin lut: Synchronizing
+        }
+///////////////////////////////////////////////////////////////////////////////
+// Decode message LUT.
+///////////////////////////////////////////////////////////////////////////////
+asm
+    {
+    ORG 0x66
+    }
+
+asm:decode_msg_lut
+
+asm
+        {
+                addwf   PCL,f
+                retlw   D'00'   ;;0     Place holder
+
+                retlw   A' '    ;;1     End lut
+                retlw   A' '
+                retlw   A' '
+                retlw   A'e'
+                retlw   A'm'
+                retlw   A'i'
+                retlw   A'T'
+                retlw   A' '
+                retlw   A'g'
+                retlw   A'n'
+                retlw   A'i'
+                retlw   A'd'
+                retlw   A'o'
+                retlw   A'c'
+                retlw   A'e'
+                retlw   A'D'    ;;16    Begin lut: Decoding Time
+        }
+///////////////////////////////////////////////////////////////////////////////
+// Display time LUT.
+///////////////////////////////////////////////////////////////////////////////
+asm
+    {
+    ORG 0x78
+    }
+
+asm:disp_time_lut
+
+asm
+        {
+                addwf   PCL,f
+                retlw   D'00'   ;;0     Place holder
+
+                retlw   A' '    ;;1     End lut
+                retlw   A')'
+                retlw   A'T'
+                retlw   A'M'
+                retlw   A'G'
+                retlw   A'('
+                retlw   A' '
+                retlw   A'e'
+                retlw   A'm'
+                retlw   A'i'
+                retlw   A'T'
+                retlw   A' '
+                retlw   A'B'
+                retlw   A'V'
+                retlw   A'W'
+                retlw   A'W'    ;;16    Begin lut: WWVB Time (GMT)
+
+
+    ORG 0x8A        ;; Makes main() code start at
+                ;; 0x8A otherwise it would start
+                ;; after this table. Brain dead...
+        }
+///////////////////////////////////////////////////////////////////////////////
+//END
